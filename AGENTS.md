@@ -24,7 +24,7 @@ v3: same as v2, but `gen_data_distill.py` needs `NVIDIA_API_KEY` env var
 
 - Order: data gen → `pretrain.py` → `finetune.py` (within each stage)
 - `finetune.py` loads `pretrain.pt` weights
-- Data generators are mutually exclusive: `gen_data_wuxia.py`, `gen_data_rule.py`, `gen_data_robot.py`, `gen_data_distill.py` — only one per session; all write `pretrain.txt`, `finetune.txt`
+- Data generators are mutually exclusive: v2 has `gen_data_wuxia.py`, `gen_data_rule.py`, `gen_data_robot.py`; v3 has only `gen_data_distill.py`. All write `pretrain.txt`, `finetune.txt`
 - Character-level tokenizer: `vocab.json` = `{stoi, itos, vocab_size}`, built by `pretrain.py` from `pretrain.txt`
 - `vocab.json` (built by `pretrain.py` from `.txt`), `*.pt`, `*.txt` are all gitignored
 
@@ -48,7 +48,7 @@ Runs on CPU by default (falls back from CUDA).
 
 ## Dependencies
 
-Only `torch` required. `gen_data_distill.py` additionally needs `openai` (v1+ API). `prepare_data.py` needs `datasets`.
+Only `torch` required. `gen_data_distill.py` additionally needs `openai` (v1+ API).
 
 No requirements.txt, no pyproject.toml — `pip install torch` (and `pip install openai` for v3-distill).
 
