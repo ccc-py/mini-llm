@@ -1,3 +1,9 @@
+*.pt
+*.pkl
+pretrain.txt
+finetune.txt
+
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
