@@ -176,8 +176,7 @@ Softmax → 預測機率
 ```bash
 pip install torch
 # 可選依賴
-pip install openai          # v3-distill 需要
-pip install datasets tqdm   # tool/build_corpus.py 需要
+pip install openai          # v3-distill 需要，但用作者預先產生的語料就不需要
 ```
 
 ### 執行流程
@@ -356,13 +355,6 @@ mini-llm/
 │   ├── prepare_data.py    # 重複（與 v2 相同）
 │   ├── run.sh             # 一鍵執行腳本（預設使用 distill）
 │   └── run.md             # 執行記錄
-│
-├── tool/                 # 輔助工具
-│   ├── build_corpus.py    # HuggingFace 語料建構工具（需要 datasets）
-│   └── processed_corpus/  # 處理後的語料庫
-│       ├── train.jsonl
-│       └── eval.jsonl
-│
 ├── .gitignore
 └── LICENSE
 ```
@@ -381,7 +373,6 @@ mini-llm/
 | v3-distill/pretrain.py | `torch` |
 | v3-distill/finetune.py | `torch` |
 | v3-distill/gen\_data\_distill.py | `openai` |
-| tool/build\_corpus.py | `datasets`, `tqdm` |
 
 ## Wiki
 
