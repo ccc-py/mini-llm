@@ -1,24 +1,28 @@
+import json
 import torch
-import pickle
 from model import ModernLanguageModel
 
 # 參數設定
 batch_size = 32
 seq_len = 64
-max_iters = 300 # 1000      # Finetune 步數通常較少
-learning_rate = 1e-4  # Finetune 學習率較低，避免破壞預訓練的記憶
+max_iters = 300
+learning_rate = 1e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
 # 1. 載入詞表與微調資料
-with open('vocab.pkl', 'rb') as f:
-    vocab = pickle.load(f)
+with open('vocab.json', 'r', encoding='utf-8') as f:
+    vocab = json.load(f)
 vocab_size = vocab['vocab_size']
-stoi, itos = vocab['stoi'], vocab['itos']
+stoi = vocab['stoi']
+itos = {int(k): v for k, v in vocab['itos'].items()}  # json keys are strings
 encode = lambda s: [stoi[c] for c in s]
 decode = lambda l: ''.join([itos[i] for i in l])
 
-data = torch.load('finetune_data.pt')
-print(f"載入 Finetune 資料，長度: {len(data)}")
+with open('finetune.txt', 'r', encoding='utf-8') as f:
+    finetune_text = f.read()
+data = torch.tensor(encode(finetune_text), dtype=torch.long)
+torch.save(data, 'finetune_data.pt')
+print(f"Finetune 資料已建立，長度: {len(data)}")
 
 def get_batch(data):
     ix = torch.randint(len(data) - seq_len, (batch_size,))
@@ -26,7 +30,7 @@ def get_batch(data):
     y = torch.stack([data[i+1:i+seq_len+1] for i in ix])
     return x.to(device), y.to(device)
 
-# 2. 初始化模型並「載入預訓練權重」
+# 2. 初始化模型並載入預訓練權重
 model = ModernLanguageModel(vocab_size=vocab_size, seq_len=seq_len, device=device).to(device)
 model.load_state_dict(torch.load('pretrain.pt', map_location=device))
 print("成功載入 pretrain.pt 權重！")

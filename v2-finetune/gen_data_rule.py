@@ -1,7 +1,4 @@
 import random
-import pickle
-import torch
-import os
 
 print("=== 開始生成合成訓練資料 (數學與規律) ===")
 
@@ -82,27 +79,7 @@ print(finetune_text[:100] + "...\n")
 
 
 # ==========================================
-# 4. 建立共用詞表與儲存
-# ==========================================
-print("-> 建立共用詞表 (Vocabulary)...")
-all_chars = sorted(list(set(pretrain_text + finetune_text)))
-vocab_size = len(all_chars)
-print(f"-> 總詞表大小 (不重複字元數): {vocab_size} 個字元 (非常小，訓練會極快！)")
-
-stoi = {ch: i for i, ch in enumerate(all_chars)}
-itos = {i: ch for i, ch in enumerate(all_chars)}
-
-# 儲存 Tokenizer
-with open('vocab.pkl', 'wb') as f:
-    pickle.dump({'stoi': stoi, 'itos': itos, 'vocab_size': vocab_size}, f)
-
-# 儲存 Tensor
-encode = lambda s: [stoi[c] for c in s]
-torch.save(torch.tensor(encode(pretrain_text), dtype=torch.long), 'pretrain_data.pt')
-torch.save(torch.tensor(encode(finetune_text), dtype=torch.long), 'finetune_data.pt')
-
-# ==========================================
-# 5. 將純文字寫入 txt 檔案以供檢查與測試
+# 4. 儲存純文字檔 (供後續 pretrain.py 建立詞表與張量)
 # ==========================================
 print("-> 儲存純文字檔 (pretrain.txt, finetune.txt)...")
 with open('pretrain.txt', 'w', encoding='utf-8') as f:
@@ -111,4 +88,4 @@ with open('pretrain.txt', 'w', encoding='utf-8') as f:
 with open('finetune.txt', 'w', encoding='utf-8') as f:
     f.write(finetune_text)
 
-print("\n✅ 合成資料準備完成！已產生: vocab.pkl, pretrain_data.pt, finetune_data.pt")
+print("\n✅ 合成資料準備完成！")

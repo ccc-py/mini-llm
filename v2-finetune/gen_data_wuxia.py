@@ -1,6 +1,4 @@
 import random
-import pickle
-import torch
 
 print("=== 開始生成合成訓練資料 (虛擬武林) ===")
 
@@ -57,21 +55,7 @@ finetune_text = ""
 while len(finetune_text) < FINETUNE_TARGET_LENGTH:
     finetune_text += "".join(random.sample(finetune_qa, len(finetune_qa)))
 
-# 4. 儲存
-all_chars = sorted(list(set(pretrain_text + finetune_text)))
-vocab_size = len(all_chars)
-print(f"-> 詞表大小: {vocab_size}")
-
-stoi = {ch: i for i, ch in enumerate(all_chars)}
-itos = {i: ch for i, ch in enumerate(all_chars)}
-
-with open('vocab.pkl', 'wb') as f: pickle.dump({'stoi': stoi, 'itos': itos, 'vocab_size': vocab_size}, f)
-torch.save(torch.tensor([stoi[c] for c in pretrain_text], dtype=torch.long), 'pretrain_data.pt')
-torch.save(torch.tensor([stoi[c] for c in finetune_text], dtype=torch.long), 'finetune_data.pt')
-
-# ==========================================
-# 5. 將純文字寫入 txt 檔案以供檢查與測試
-# ==========================================
+# 4. 儲存純文字檔 (供後續 pretrain.py 建立詞表與張量)
 print("-> 儲存純文字檔 (pretrain.txt, finetune.txt)...")
 with open('pretrain.txt', 'w', encoding='utf-8') as f:
     f.write(pretrain_text)

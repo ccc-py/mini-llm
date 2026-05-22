@@ -1,21 +1,36 @@
+import json
 import torch
-import pickle
 from model import ModernLanguageModel
 
 # 參數設定
 batch_size = 32
 seq_len = 64
-max_iters = 500 #3000
-learning_rate = 5e-4 # Pretrain 學習率通常較高
+max_iters = 500
+learning_rate = 5e-4
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
-# 1. 載入詞表與資料
-with open('vocab.pkl', 'rb') as f:
-    vocab = pickle.load(f)
-vocab_size = vocab['vocab_size']
+# 1. 從純文字檔建立詞表與訓練資料
+with open('pretrain.txt', 'r', encoding='utf-8') as f:
+    pretrain_text = f.read()
 
-data = torch.load('pretrain_data.pt')
-print(f"載入 Pretrain 資料，長度: {len(data)}")
+with open('finetune.txt', 'r', encoding='utf-8') as f:
+    finetune_text = f.read()
+
+all_chars = sorted(list(set(pretrain_text + finetune_text)))
+vocab_size = len(all_chars)
+print(f"詞表大小: {vocab_size} 字元")
+
+stoi = {ch: i for i, ch in enumerate(all_chars)}
+itos = {i: ch for i, ch in enumerate(all_chars)}
+
+with open('vocab.json', 'w', encoding='utf-8') as f:
+    json.dump({'stoi': stoi, 'itos': itos, 'vocab_size': vocab_size}, f, ensure_ascii=False)
+print("詞表已儲存為 vocab.json")
+
+encode = lambda s: [stoi[c] for c in s]
+data = torch.tensor(encode(pretrain_text), dtype=torch.long)
+torch.save(data, 'pretrain_data.pt')
+print(f"Pretrain 資料已儲存，長度: {len(data)}")
 
 def get_batch(data):
     ix = torch.randint(len(data) - seq_len, (batch_size,))

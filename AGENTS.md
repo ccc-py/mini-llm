@@ -1,49 +1,59 @@
 # mini-llm — AGENTS.md
 
-## Repo structure
+Toy LLM pretrain+finetune+distill in pure PyTorch. Three independent stages, each self-contained (run from within its directory).
 
-Toy LLM pretrain+finetune+distill in pure PyTorch. Three independent stages, each self-contained (run from within its directory):
+## Structure
 
 | Directory | What it does |
 |-----------|-------------|
-| `v1-pretrain/` | Single-stage character LM: `python mini-llm.py --file input.txt` |
-| `v2-finetune/` | Two-stage: data gen → pretrain → finetune. Model in `model.py` |
-| `v3-distill/` | Same as v2 but data generated via NVIDIA API distillation |
-| `tool/` | (Separate) HuggingFace corpus builder (`datasets` needed) |
+| `v1-pretrain/` | Single-stage char LM, monolithic in `mini-llm.py` |
+| `v2-finetune/` | Data gen → pretrain → finetune |
+| `v3-distill/` | Same as v2 but data via NVIDIA API distillation |
+| `_wiki/` | 15 technical reference docs |
+| `_doc/` | Provenance links (AI Studio prompt) |
 
 ## Commands (run from the subdirectory)
 
-v1: `python mini-llm.py --file input.txt` (optional: `--iters N --seq_len N --batch_size N --gen_len N`)
+v1: `python mini-llm.py --file input.txt` [--iters N --seq_len N --batch_size N --gen_len N]
 
-v2: `./run.sh` → picks one data generator (edit run.sh to swap), then runs pretrain.py → finetune.py
+v2: `./run.sh` — edit run.sh to swap data generator, then runs pretrain.py → finetune.py
 
-v3: same as v2, but `gen_data_distill.py` requires `NVIDIA_API_KEY` env var
+v3: same as v2, but `gen_data_distill.py` needs `NVIDIA_API_KEY` env var
 
-## Workflow rules
+## Workflow
 
-- **Order matters** (within each stage): data generation → `pretrain.py` → `finetune.py`
-- **Finetune depends on pretrain**: `finetune.py` loads `pretrain.pt` weights
-- **Data generators are mutually exclusive**: `gen_data_wuxia.py`, `gen_data_rule.py`, `gen_data_robot.py`, `gen_data_distill.py` — only one should run per session; they all write the same output files (`vocab.pkl`, `pretrain_data.pt`, `finetune_data.pt`)
-- **Character-level tokenizer**: built from unique chars in the corpus each time you generate data; `vocab.pkl` is a dict with `stoi`, `itos`, `vocab_size`
-
-## Artifacts
-
-All auto-generated and gitignored: `*.pt`, `*.pkl`, `pretrain.txt`, `finetune.txt`
-
-Generated from data scripts and overwritten on each run.
+- Order: data gen → `pretrain.py` → `finetune.py` (within each stage)
+- `finetune.py` loads `pretrain.pt` weights
+- Data generators are mutually exclusive: `gen_data_wuxia.py`, `gen_data_rule.py`, `gen_data_robot.py`, `gen_data_distill.py` — only one per session; all write `pretrain.txt`, `finetune.txt`
+- Character-level tokenizer: `vocab.json` = `{stoi, itos, vocab_size}`, built by `pretrain.py` from `pretrain.txt`
+- `vocab.json` (built by `pretrain.py` from `.txt`), `*.pt`, `*.txt` are all gitignored
 
 ## Model
 
-Architecture: RoPE, RMSNorm, SwiGLU FFN, weight tying. Defaults: d_model=128, n_heads=4, seq_len=64.
-- v1: 3 layers, ~0.8M params, trained 2000 steps
-- v2/v3: 4 layers, trained 500 steps pretrain + 300 steps finetune
+Architecture: RoPE, RMSNorm, SwiGLU FFN, weight tying. All training loops use gradient clipping (norm=1.0).
+
+| Param | v1 | v2/v3 |
+|-------|-----|-------|
+| d_model | 128 | 128 |
+| n_heads | 4 | 4 |
+| n_layers | 3 | 4 |
+| seq_len | 32 | 64 |
+| pretrain steps | 2000 | 500 |
+| finetune steps | — | 300 |
+| batch_size | 16 | 32 |
+| lr (pretrain) | 3e-4 | 5e-4 |
+| lr (finetune) | — | 1e-4 |
 
 Runs on CPU by default (falls back from CUDA).
 
-## No dependencies
+## Dependencies
 
-No requirements.txt, no pyproject.toml. Only `torch` needed. `tool/build_corpus.py` additionally needs `datasets` from HuggingFace.
+Only `torch` required. `gen_data_distill.py` additionally needs `openai` (v1+ API). `prepare_data.py` needs `datasets`.
 
-## Testing, linting, typechecking
+No requirements.txt, no pyproject.toml — `pip install torch` (and `pip install openai` for v3-distill).
 
-None.
+## Notes
+
+- v2/v3 share identical `model.py`, `pretrain.py`, `finetune.py` across both dirs
+- v1 is standalone (model+training in one file, 3 layers vs 4 in v2/v3)
+- No test/lint/type infrastructure exists

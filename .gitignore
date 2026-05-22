@@ -1,7 +1,7 @@
 *.pt
-*.pkl
-pretrain.txt
-finetune.txt
+# vocab.json
+# pretrain.txt
+# finetune.txt
 
 
 # Byte-compiled / optimized / DLL files
