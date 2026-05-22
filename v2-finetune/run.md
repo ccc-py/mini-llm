@@ -1,4 +1,4 @@
-# llm4 v2 -- run.sh
+# mini-llm v2 -- run.sh
 
 ```
 (.venv) cccuser@cccimacdeiMac v3 % ./run.sh

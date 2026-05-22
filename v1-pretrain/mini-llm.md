@@ -1,6 +1,6 @@
 
 ```
-(.venv) cccuser@cccimacdeiMac llm % python llm4.py --file input.txt
+(.venv) cccuser@cccimacdeiMac llm % python mini-llm.py --file input.txt
 成功讀取檔案: input.txt (總字元數: 991)
 詞表大小 (不重複字元): 96
 模型參數總數: 0.800 M

@@ -1,1 +1,1 @@
-python llm4.py --file input.txt
+python mini-llm.py --file input.txt
