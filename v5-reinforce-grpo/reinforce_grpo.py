@@ -1,14 +1,23 @@
 import json
 import random
+import argparse
 import torch
 import torch.nn.functional as F
 from model import ModernLanguageModel
 
-batch_size = 8
+parser = argparse.ArgumentParser()
+parser.add_argument('--steps', type=int, default=1000)
+parser.add_argument('--beta', type=float, default=0.04)
+parser.add_argument('--group', type=int, default=8)
+parser.add_argument('--lr', type=float, default=1e-5)
+args = parser.parse_args()
+
+G = args.group
 seq_len = 64
-max_iters = 500
-learning_rate = 1e-5
+max_iters = args.steps
+learning_rate = args.lr
 max_gen_len = 20
+beta_kl = args.beta
 eval_every = 50
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
 
@@ -32,21 +41,21 @@ def load_qa(path):
 
 seen_pairs = load_qa('finetune.txt')
 unseen_pairs = load_qa('rl_unseen.txt')
-print(f"Seen (SFT): {len(seen_pairs)} pairs, Unseen (RL): {len(unseen_pairs)} pairs")
+print(f"Seen: {len(seen_pairs)} pairs, Unseen: {len(unseen_pairs)} pairs")
+print(f"GRPO: steps={max_iters}, G={G}, β={beta_kl}, lr={learning_rate}")
 
 model = ModernLanguageModel(vocab_size=vocab_size, seq_len=seq_len, device=device).to(device)
 model.load_state_dict(torch.load('finetune.pt', map_location=device))
-print("Loaded finetune.pt")
+ref_model = ModernLanguageModel(vocab_size=vocab_size, seq_len=seq_len, device=device).to(device)
+ref_model.load_state_dict(torch.load('finetune.pt', map_location=device))
+ref_model.eval()
+print("Loaded finetune.pt (policy + reference)")
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 def compute_reward(response, expected):
-    rs = response.strip()
-    es = expected.strip()
-    if es in rs:
+    if expected.strip() in response.strip():
         return 1.0
-    if rs and any(c.isdigit() for c in es) and any(c.isdigit() for c in rs[:5]):
-        return 0.2
     return 0.0
 
 @torch.no_grad()
@@ -54,7 +63,6 @@ def evaluate(pairs, num=100):
     model.eval()
     n = min(num, len(pairs))
     correct = 0
-    total = 0
     for i in range(n):
         prompt, expected = pairs[i]
         prompt_ids = encode(prompt)
@@ -68,75 +76,94 @@ def evaluate(pairs, num=100):
             if itos.get(token.item(), '') == '\n':
                 break
         resp = decode(gen)[len(prompt):].strip()
-        total += 1
         if expected.strip() in resp:
             correct += 1
-    return correct / total
+    return correct / n
 
 init_seen = evaluate(seen_pairs)
 init_unseen = evaluate(unseen_pairs)
 print(f"Before RL → Seen: {init_seen*100:.1f}%, Unseen: {init_unseen*100:.1f}%")
 print()
 
-baseline = 0.1
 for step in range(max_iters):
     model.train()
-    total_loss = 0.0
-    rewards = []
+    prompt, expected = random.choice(unseen_pairs)
+    prompt_ids = encode(prompt)
 
-    for _ in range(batch_size):
-        prompt, expected = random.choice(unseen_pairs)
-        prompt_ids = encode(prompt)
+    group_log_probs = []
+    group_kls = []
+    group_rewards = []
+
+    for _ in range(G):
         gen = prompt_ids.copy()
-        log_probs = []
+        traj_log_probs = []
+        traj_kl = 0.0
 
         for _ in range(max_gen_len):
             ctx = torch.tensor(gen[-seq_len:], dtype=torch.long, device=device).unsqueeze(0)
-            logits, _ = model(ctx)
-            logits_last = logits[:, -1, :]
+            logits_theta, _ = model(ctx)
+            logits_last = logits_theta[:, -1, :]
             probs = F.softmax(logits_last, dim=-1)
             token = torch.multinomial(probs, 1)
             log_prob = -F.cross_entropy(logits_last, token.view(-1))
-            log_probs.append(log_prob)
+            traj_log_probs.append(log_prob)
+
+            with torch.no_grad():
+                logits_ref, _ = ref_model(ctx)
+            lp_theta = F.log_softmax(logits_last, dim=-1)
+            p_ref = F.softmax(logits_ref[:, -1, :], dim=-1)
+            traj_kl = traj_kl + (p_ref * (p_ref.log() - lp_theta)).sum()
+
             gen.append(token.item())
             if itos.get(token.item(), '') == '\n':
                 break
 
         resp = decode(gen)[len(prompt):]
         reward = compute_reward(resp, expected)
-        rewards.append(reward)
-        advantage = reward - baseline
-        loss = -torch.stack(log_probs).sum() * advantage
-        total_loss = total_loss + loss
+        group_log_probs.append(torch.stack(traj_log_probs))
+        group_kls.append(traj_kl)
+        group_rewards.append(reward)
 
-    avg_loss = total_loss / batch_size
+    # Group advantage
+    rewards_t = torch.tensor(group_rewards, device=device, dtype=torch.float)
+    adv = (rewards_t - rewards_t.mean()) / (rewards_t.std() + 1e-8)
+
+    # Loss
+    total_pg = 0.0
+    total_kl = 0.0
+    for i in range(G):
+        total_pg = total_pg - group_log_probs[i].sum() * adv[i]
+        total_kl = total_kl + group_kls[i]
+    avg_pg = total_pg / G
+    avg_kl = total_kl / G
+    loss = avg_pg + beta_kl * avg_kl
+
     optimizer.zero_grad()
-    avg_loss.backward()
+    loss.backward()
     torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
     optimizer.step()
 
-    avg_reward = sum(rewards) / len(rewards)
-    baseline = 0.95 * baseline + 0.05 * avg_reward
-
+    avg_r = sum(group_rewards) / G
     if step % 25 == 0 or step == max_iters - 1:
-        print(f"Step {step:4d} | Loss: {avg_loss.item():+.4f} | Reward: {avg_reward:.3f} | Baseline: {baseline:.3f}")
+        print(f"Step {step:4d} | Loss: {loss.item():+.4f} | Reward: {avg_r:.3f} | KL: {avg_kl.item():.4f}")
 
     if (step + 1) % eval_every == 0:
-        seen_acc = evaluate(seen_pairs, 50)
-        unseen_acc = evaluate(unseen_pairs, 50)
-        print(f"  Eval → Seen: {seen_acc*100:.1f}%, Unseen: {unseen_acc*100:.1f}%")
+        s = evaluate(seen_pairs, 50)
+        u = evaluate(unseen_pairs, 50)
+        print(f"  Eval → Seen: {s*100:.1f}%, Unseen: {u*100:.1f}%")
         model.train()
 
-torch.save(model.state_dict(), 'reinforce.pt')
+torch.save(model.state_dict(), 'reinforce_grpo.pt')
 print()
 
-final_seen = evaluate(seen_pairs)
-final_unseen = evaluate(unseen_pairs)
-
+fs = evaluate(seen_pairs)
+fu = evaluate(unseen_pairs)
+import json as _j
+_j.dump({"method":"GRPO","seen_before":round(init_seen*100,1),"seen_after":round(fs*100,1),"unseen_before":round(init_unseen*100,1),"unseen_after":round(fu*100,1)}, open('metrics_grpo.json','w'))
 print("=" * 45)
 print(f"  {'Metric':<20} {'Before':>10} {'After':>10}")
 print("=" * 45)
-print(f"  {'Seen accuracy':<20} {init_seen*100:>9.1f}% {final_seen*100:>9.1f}%")
-print(f"  {'Unseen accuracy':<20} {init_unseen*100:>9.1f}% {final_unseen*100:>9.1f}%")
+print(f"  {'Seen accuracy':<20} {init_seen*100:>9.1f}% {fs*100:>9.1f}%")
+print(f"  {'Unseen accuracy':<20} {init_unseen*100:>9.1f}% {fu*100:>9.1f}%")
 print("=" * 45)
-print("Saved reinforce.pt")
+print("Saved reinforce_grpo.pt")

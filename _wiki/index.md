@@ -21,6 +21,8 @@
 | [Synthetic Data Augmentation](synthetic-data-augmentation.md) | 合成資料擴增 — 以規則或大模型產生訓練資料 |
 | [Gradient Descent](gradient-descent.md) | 梯度下降 — 深度學習的最佳化核心原理 |
 | [Policy Gradient (REINFORCE)](reinforcement-learning.md) | 策略梯度強化學習 — REINFORCE 演算法與語言模型的 RL 訓練 |
+| [GRPO (Group Relative Policy Optimization)](grpo.md) | 群體相對策略最佳化 — 以群體內比較取代 critic 網絡的輕量 RL 演算法 |
+| [Reward Model](reward-model.md) | 獎勵模型 — 用神經網路學習獎勵函數，RLHF 的核心組件 |
 
 ## 參照
 
@@ -32,4 +34,7 @@
 - **v2-finetune/finetune.py** — 微調腳本
 - **v2-finetune/gen_data_\*.py** — 合成資料生成器
 - **v3-distill/gen_data_distill.py** — 知識蒸餾資料生成器
-- **v4-reinforce/reinforce.py** — REINFORCE 強化學習訓練腳本
+- **v4-reinforce/reinforce_ema.py** — REINFORCE + EMA 基線強化學習
+- **v4-reinforce/reinforce_rm.py** — REINFORCE + 神經獎勵模型
+- **v4-reinforce/reinforce_grpo.py** — GRPO 群體相對策略最佳化
+- **v4-reinforce/train_reward_model.py** — 獎勵模型訓練腳本

@@ -22,7 +22,13 @@ v2: `./run.sh` — edit run.sh to swap data generator, then runs pretrain.py →
 
 v3: same as v2, but `gen_data_distill.py` needs `NVIDIA_API_KEY` env var
 
-v4: `./run.sh` — gen_data.py → pretrain.py → finetune.py → reinforce.py (REINFORCE w/ baseline)
+v4: `./run.sh` — gen_data.py → pretrain.py → finetune.py → all 3 RL methods + comparison table  
+    `./run_grpo.sh` — shortcut: data gen → GRPO only (1000 steps)  
+    Scripts:  
+    - `reinforce_ema.py` — vanilla REINFORCE, EMA baseline, rule-based reward
+    - `reinforce_rm.py` — REINFORCE with neural reward model (pretrained from pretrain.pt)
+    - `reinforce_grpo.py` — simplified GRPO: group advantage + KL penalty (π_ref frozen)
+    - `compare.py` — reads `metrics_*.json`, prints comparison table
 
 ## Workflow
 

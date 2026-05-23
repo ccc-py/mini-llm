@@ -1,8 +1,9 @@
 import json
 import random
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
-from model import ModernLanguageModel
+from model import ModernLanguageModel, RMSNorm, precompute_freqs_cis, TransformerBlock
 
 batch_size = 8
 seq_len = 64
@@ -19,6 +20,23 @@ stoi = vocab['stoi']
 itos = {int(k): v for k, v in vocab['itos'].items()}
 encode = lambda s: [stoi[c] for c in s]
 decode = lambda l: ''.join([itos[i] for i in l])
+
+class RewardModel(nn.Module):
+    def __init__(self, vocab_size, d_model=128, n_heads=4, n_layers=4, seq_len=64, device='cpu'):
+        super().__init__()
+        self.seq_len = seq_len
+        self.tok_emb = nn.Embedding(vocab_size, d_model)
+        self.layers = nn.ModuleList([TransformerBlock(d_model, n_heads) for _ in range(n_layers)])
+        self.norm = RMSNorm(d_model)
+        self.score_head = nn.Linear(d_model, 1, bias=False)
+        self.freqs_cis = precompute_freqs_cis(d_model // n_heads, seq_len * 2).to(device)
+
+    def forward(self, idx):
+        x = self.tok_emb(idx)
+        for layer in self.layers:
+            x = layer(x, self.freqs_cis)
+        x = self.norm(x)
+        return self.score_head(x[:, -1, :]).squeeze(-1)
 
 def load_qa(path):
     pairs = []
@@ -40,21 +58,16 @@ print("Loaded finetune.pt")
 
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
-def compute_reward(response, expected):
-    rs = response.strip()
-    es = expected.strip()
-    if es in rs:
-        return 1.0
-    if rs and any(c.isdigit() for c in es) and any(c.isdigit() for c in rs[:5]):
-        return 0.2
-    return 0.0
+rm = RewardModel(vocab_size=vocab_size, device=device).to(device)
+rm.load_state_dict(torch.load('reward_model.pt', map_location=device, weights_only=True), strict=False)
+rm.eval()
+print("Loaded reward_model.pt")
 
 @torch.no_grad()
 def evaluate(pairs, num=100):
     model.eval()
     n = min(num, len(pairs))
     correct = 0
-    total = 0
     for i in range(n):
         prompt, expected = pairs[i]
         prompt_ids = encode(prompt)
@@ -68,10 +81,9 @@ def evaluate(pairs, num=100):
             if itos.get(token.item(), '') == '\n':
                 break
         resp = decode(gen)[len(prompt):].strip()
-        total += 1
         if expected.strip() in resp:
             correct += 1
-    return correct / total
+    return correct / n
 
 init_seen = evaluate(seen_pairs)
 init_unseen = evaluate(unseen_pairs)
@@ -85,7 +97,7 @@ for step in range(max_iters):
     rewards = []
 
     for _ in range(batch_size):
-        prompt, expected = random.choice(unseen_pairs)
+        prompt, _ = random.choice(unseen_pairs)
         prompt_ids = encode(prompt)
         gen = prompt_ids.copy()
         log_probs = []
@@ -102,8 +114,11 @@ for step in range(max_iters):
             if itos.get(token.item(), '') == '\n':
                 break
 
-        resp = decode(gen)[len(prompt):]
-        reward = compute_reward(resp, expected)
+        full_text = decode(gen)
+        full_ids = torch.tensor(encode(full_text), dtype=torch.long, device=device).unsqueeze(0)
+        with torch.no_grad():
+            reward = rm(full_ids).item()
+        reward = max(0.0, reward)
         rewards.append(reward)
         advantage = reward - baseline
         loss = -torch.stack(log_probs).sum() * advantage

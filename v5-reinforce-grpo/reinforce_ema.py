@@ -1,13 +1,20 @@
 import json
 import random
+import argparse
 import torch
 import torch.nn.functional as F
 from model import ModernLanguageModel
 
-batch_size = 8
+parser = argparse.ArgumentParser()
+parser.add_argument('--steps', type=int, default=500)
+parser.add_argument('--lr', type=float, default=1e-5)
+parser.add_argument('--batch', type=int, default=8)
+args = parser.parse_args()
+
 seq_len = 64
-max_iters = 500
-learning_rate = 1e-5
+max_iters = args.steps
+learning_rate = args.lr
+batch_size = args.batch
 max_gen_len = 20
 eval_every = 50
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
@@ -32,21 +39,16 @@ def load_qa(path):
 
 seen_pairs = load_qa('finetune.txt')
 unseen_pairs = load_qa('rl_unseen.txt')
-print(f"Seen (SFT): {len(seen_pairs)} pairs, Unseen (RL): {len(unseen_pairs)} pairs")
+print(f"Seen: {len(seen_pairs)} pairs, Unseen: {len(unseen_pairs)} pairs")
 
 model = ModernLanguageModel(vocab_size=vocab_size, seq_len=seq_len, device=device).to(device)
 model.load_state_dict(torch.load('finetune.pt', map_location=device))
 print("Loaded finetune.pt")
-
 optimizer = torch.optim.AdamW(model.parameters(), lr=learning_rate)
 
 def compute_reward(response, expected):
-    rs = response.strip()
-    es = expected.strip()
-    if es in rs:
+    if expected.strip() in response.strip():
         return 1.0
-    if rs and any(c.isdigit() for c in es) and any(c.isdigit() for c in rs[:5]):
-        return 0.2
     return 0.0
 
 @torch.no_grad()
@@ -54,7 +56,6 @@ def evaluate(pairs, num=100):
     model.eval()
     n = min(num, len(pairs))
     correct = 0
-    total = 0
     for i in range(n):
         prompt, expected = pairs[i]
         prompt_ids = encode(prompt)
@@ -68,14 +69,14 @@ def evaluate(pairs, num=100):
             if itos.get(token.item(), '') == '\n':
                 break
         resp = decode(gen)[len(prompt):].strip()
-        total += 1
         if expected.strip() in resp:
             correct += 1
-    return correct / total
+    return correct / n
 
 init_seen = evaluate(seen_pairs)
 init_unseen = evaluate(unseen_pairs)
-print(f"Before RL → Seen: {init_seen*100:.1f}%, Unseen: {init_unseen*100:.1f}%")
+print(f"REINFORCE(EMA): steps={max_iters}, batch={batch_size}, lr={learning_rate}")
+print(f"Before → Seen: {init_seen*100:.1f}%, Unseen: {init_unseen*100:.1f}%")
 print()
 
 baseline = 0.1
@@ -122,21 +123,22 @@ for step in range(max_iters):
         print(f"Step {step:4d} | Loss: {avg_loss.item():+.4f} | Reward: {avg_reward:.3f} | Baseline: {baseline:.3f}")
 
     if (step + 1) % eval_every == 0:
-        seen_acc = evaluate(seen_pairs, 50)
-        unseen_acc = evaluate(unseen_pairs, 50)
-        print(f"  Eval → Seen: {seen_acc*100:.1f}%, Unseen: {unseen_acc*100:.1f}%")
+        s = evaluate(seen_pairs, 50)
+        u = evaluate(unseen_pairs, 50)
+        print(f"  Eval → Seen: {s*100:.1f}%, Unseen: {u*100:.1f}%")
         model.train()
 
-torch.save(model.state_dict(), 'reinforce.pt')
+torch.save(model.state_dict(), 'reinforce_ema.pt')
 print()
 
-final_seen = evaluate(seen_pairs)
-final_unseen = evaluate(unseen_pairs)
-
+fs = evaluate(seen_pairs)
+fu = evaluate(unseen_pairs)
 print("=" * 45)
 print(f"  {'Metric':<20} {'Before':>10} {'After':>10}")
 print("=" * 45)
-print(f"  {'Seen accuracy':<20} {init_seen*100:>9.1f}% {final_seen*100:>9.1f}%")
-print(f"  {'Unseen accuracy':<20} {init_unseen*100:>9.1f}% {final_unseen*100:>9.1f}%")
+print(f"  {'Seen accuracy':<20} {init_seen*100:>9.1f}% {fs*100:>9.1f}%")
+print(f"  {'Unseen accuracy':<20} {init_unseen*100:>9.1f}% {fu*100:>9.1f}%")
 print("=" * 45)
-print("Saved reinforce.pt")
+print(f"RESULT|REINFORCE(EMA)|{init_seen*100:.1f}|{fs*100:.1f}|{init_unseen*100:.1f}|{fu*100:.1f}")
+import json; json.dump({"method":"REINFORCE(EMA)","seen_before":round(init_seen*100,1),"seen_after":round(fs*100,1),"unseen_before":round(init_unseen*100,1),"unseen_after":round(fu*100,1)}, open('metrics_ema.json','w'))
+print("Saved reinforce_ema.pt")
