@@ -20,14 +20,16 @@
 | [Gradient Clipping](gradient-clipping.md) | 梯度裁切 — 防止梯度爆炸的訓練穩定技術 |
 | [Synthetic Data Augmentation](synthetic-data-augmentation.md) | 合成資料擴增 — 以規則或大模型產生訓練資料 |
 | [Gradient Descent](gradient-descent.md) | 梯度下降 — 深度學習的最佳化核心原理 |
+| [Policy Gradient (REINFORCE)](reinforcement-learning.md) | 策略梯度強化學習 — REINFORCE 演算法與語言模型的 RL 訓練 |
 
 ## 參照
 
 本 wiki 的說明對應 `mini-llm` 專案的實作位置：
 
 - **v1-pretrain/mini-llm.py** — 單階段字元級語言模型（完整實作）
-- **v2-finetune/model.py** — 多層 Transformer 模型定義（v2/v3 共用）
+- **v2-finetune/model.py** — 多層 Transformer 模型定義（v2/v3/v4 共用）
 - **v2-finetune/pretrain.py** — 預訓練腳本
 - **v2-finetune/finetune.py** — 微調腳本
 - **v2-finetune/gen_data_\*.py** — 合成資料生成器
 - **v3-distill/gen_data_distill.py** — 知識蒸餾資料生成器
+- **v4-reinforce/reinforce.py** — REINFORCE 強化學習訓練腳本
